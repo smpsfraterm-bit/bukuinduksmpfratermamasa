@@ -100,6 +100,9 @@
 
         async function saveData() {
             if (!firebaseUser) return;
+            // Cegah User (Read-Only) menyimpan atau mengubah data di Firebase
+            if (!isAdmin()) return;
+
             const dataToSave = {
                 siswa: state.siswa,
                 nilai: state.nilai,
@@ -139,15 +142,30 @@
             return parseFloat(angka).toFixed(2);
         }
 
+        // Helper untuk cek apakah role aktif adalah Admin
+        function isAdmin() {
+            return state.currentUser && state.currentUser.role === 'Admin';
+        }
+
         function handleLogin(event) {
             event.preventDefault();
-            const username = document.getElementById('username').value;
-            // Simple dummy auth
-            state.isLoggedIn = true;
-            state.currentUser = { username: username, role: username.toLowerCase() === 'guru' ? 'Guru' : 'Admin' };
-            state.currentView = 'dashboard';
-            renderApp();
-            showNotification(`Selamat datang, ${state.currentUser.role}!`);
+            const password = document.getElementById('password').value;
+            
+            if (password === 'adminbisfrms') {
+                state.isLoggedIn = true;
+                state.currentUser = { username: 'Administrator', role: 'Admin' };
+                state.currentView = 'dashboard';
+                renderApp();
+                showNotification(`Selamat datang, Admin!`);
+            } else if (password === 'user123') {
+                state.isLoggedIn = true;
+                state.currentUser = { username: 'User Akun', role: 'User' };
+                state.currentView = 'dashboard';
+                renderApp();
+                showNotification(`Selamat datang! Anda masuk sebagai User (Hanya Lihat).`);
+            } else {
+                showNotification('Password salah!', 'error');
+            }
         }
 
         function handleLogout() {
@@ -180,30 +198,21 @@
                     <div class="w-full flex items-center justify-center bg-gray-100">
                         <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
                             <div class="text-center mb-8">
-                                <!-- Menggunakan file logo_sekolah.png yang diunggah -->
                                 <img src="logo_sekolah.png" onerror="this.src='https://placehold.co/100x100/ffffff/000000?text=SMP+Frater'" alt="Logo SMP Frater Mamasa" class="h-28 mx-auto mb-4 object-contain">
                                 <h1 class="text-2xl font-bold text-gray-800">Buku Induk Digital</h1>
                                 <p class="text-sm text-gray-500 mt-2">SMP Frater Mamasa</p>
                             </div>
                             <form id="login-form" onsubmit="handleLogin(event)">
-                                <div class="mb-5">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                                    <div class="relative">
-                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-user text-gray-400"></i></div>
-                                        <input type="text" id="username" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Masukkan username" required>
-                                    </div>
-                                </div>
                                 <div class="mb-6">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Password Sistem</label>
                                     <div class="relative">
                                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-lock text-gray-400"></i></div>
                                         <input type="password" id="password" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Masukkan password" required>
                                     </div>
                                 </div>
                                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">
-                                    Login
+                                    Masuk Sistem
                                 </button>
-                                <p class="text-xs text-center text-gray-400 mt-4">Ketik 'guru' sebagai username untuk role Guru. Selain itu akan menjadi Admin.</p>
                             </form>
                         </div>
                     </div>
@@ -214,7 +223,6 @@
                     <!-- Sidebar -->
                     <aside id="sidebar" class="bg-gray-900 text-white w-64 flex-shrink-0 hidden md:flex flex-col h-full transition-all duration-300 absolute md:relative z-20">
                         <div class="h-16 flex items-center px-6 border-b border-gray-800 bg-gray-900 flex-shrink-0">
-                            <!-- Logo sekolah di sidebar -->
                             <img src="logo_sekolah.png" onerror="this.src='https://placehold.co/40x40/ffffff/000000?text=SMP'" alt="Logo" class="h-9 w-9 object-contain mr-3 bg-white rounded-full p-0.5">
                             <span class="text-sm font-bold tracking-wider">SMP FRATER MAMASA</span>
                             <button onclick="document.getElementById('sidebar').classList.add('hidden')" class="md:hidden ml-auto text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
@@ -245,7 +253,7 @@
                                 <li class="px-6 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4">Akademik</li>
                                 <li>
                                     <a href="#" id="nav-inputnilai" onclick="navigateTo('inputnilai')" class="sidebar-item flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
-                                        <i class="fas fa-clipboard-list w-5 mr-3"></i> Input Nilai
+                                        <i class="fas fa-clipboard-list w-5 mr-3"></i> ${isAdmin() ? 'Input Nilai' : 'Daftar Nilai'}
                                     </a>
                                 </li>
                                 <li>
@@ -310,7 +318,7 @@
                                state.currentView === 'datasiswa' ? 'Data Siswa' : 
                                state.currentView === 'dataortu' ? 'Data Orang Tua' : 
                                state.currentView === 'dataakademik' ? 'Data Akademik' : 
-                               state.currentView === 'inputnilai' ? 'Input Nilai' : 'Laporan';
+                               state.currentView === 'inputnilai' ? (isAdmin() ? 'Input Nilai' : 'Daftar Nilai') : 'Laporan';
 
             if (state.currentView === 'dashboard') {
                 renderDashboard(contentEl);
@@ -388,6 +396,8 @@
         }
 
         function renderDataSiswa(container) {
+            const isUserAdmin = isAdmin();
+            
             let tableRows = state.siswa.map((s, index) => `
                 <tr class="hover:bg-gray-50 border-b border-gray-100">
                     <td class="py-3 px-4 text-sm text-gray-600">${index + 1}</td>
@@ -395,17 +405,19 @@
                     <td class="py-3 px-4 text-sm text-gray-800">${s.nama}</td>
                     <td class="py-3 px-4 text-sm text-gray-600">${s.kelas}</td>
                     <td class="py-3 px-4 text-sm text-gray-600">${s.tempat}, ${s.tglLahir}</td>
+                    ${isUserAdmin ? `
                     <td class="py-3 px-4 text-sm">
                         <div class="flex space-x-2">
                             <button onclick="openModalSiswa(${s.id})" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-1.5 rounded"><i class="fas fa-edit"></i></button>
                             <button onclick="hapusSiswa(${s.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded"><i class="fas fa-trash"></i></button>
                         </div>
                     </td>
+                    ` : ''}
                 </tr>
             `).join('');
 
             if(state.siswa.length === 0) {
-                tableRows = `<tr><td colspan="6" class="py-6 text-center text-gray-500">Belum ada data siswa.</td></tr>`;
+                tableRows = `<tr><td colspan="${isUserAdmin ? '6' : '5'}" class="py-6 text-center text-gray-500">Belum ada data siswa.</td></tr>`;
             }
 
             container.innerHTML = `
@@ -415,9 +427,11 @@
                             <input type="text" placeholder="Cari siswa..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm">
                             <i class="fas fa-search absolute left-3 top-2.5 text-gray-400"></i>
                         </div>
+                        ${isUserAdmin ? `
                         <button onclick="openModalSiswa()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm text-sm flex items-center transition-colors">
                             <i class="fas fa-plus mr-2"></i> Tambah Data
                         </button>
+                        ` : ''}
                     </div>
                     <div class="overflow-x-auto flex-1">
                         <table class="w-full text-left border-collapse">
@@ -428,7 +442,7 @@
                                     <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Nama Siswa</th>
                                     <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Kelas</th>
                                     <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Tempat, Tgl Lahir</th>
-                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>
+                                    ${isUserAdmin ? `<th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>` : ''}
                                 </tr>
                             </thead>
                             <tbody>${tableRows}</tbody>
@@ -439,6 +453,10 @@
         }
 
         function openModalSiswa(id = null) {
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda tidak memiliki izin.', 'error');
+                return;
+            }
             let siswa = id ? state.siswa.find(s => s.id === id) : null;
             const modalTitle = siswa ? 'Edit Data Siswa' : 'Tambah Data Siswa';
             
@@ -502,6 +520,10 @@
         // Simpan data siswa ke Firebase
         function saveSiswa(e, id) {
             e.preventDefault();
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             const newData = {
                 nis: document.getElementById('nis').value,
                 nama: document.getElementById('nama').value,
@@ -531,6 +553,10 @@
         }
 
         function hapusSiswa(id) {
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             if(confirm('Apakah Anda yakin ingin menghapus data siswa ini?')) {
                 state.siswa = state.siswa.filter(s => s.id !== id);
                 // Hapus juga nilai yang terhubung
@@ -542,6 +568,8 @@
         }
 
         function renderInputNilai(container) {
+            const isUserAdmin = isAdmin();
+            
             // Gabungkan data Siswa dan Nilai
             let tableRows = state.nilai.map((n, index) => {
                 const s = state.siswa.find(siswa => siswa.id === n.idSiswa);
@@ -564,7 +592,8 @@
 
             container.innerHTML = `
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Form Input Nilai -->
+                    <!-- Form Input Nilai (Hanya Muncul jika Admin) -->
+                    ${isUserAdmin ? `
                     <div class="bg-white rounded-lg shadow-sm border p-6">
                         <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4">Input Nilai Siswa</h3>
                         <form onsubmit="simpanNilai(event)">
@@ -598,18 +627,19 @@
                                     </div>
                                 </div>
                                 <div class="pt-2">
-                                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm text-sm transition-colors">
+                                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm text-sm transition-colors">
                                         Simpan Nilai
                                     </button>
                                 </div>
                             </div>
                         </form>
                     </div>
+                    ` : ''}
 
                     <!-- Tabel Rekap Nilai -->
-                    <div class="lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col">
+                    <div class="${isUserAdmin ? 'lg:col-span-2' : 'col-span-3'} bg-white rounded-lg shadow-sm border flex flex-col">
                         <div class="p-5 border-b border-gray-100 flex justify-between items-center">
-                            <h3 class="text-lg font-medium text-gray-800">Rekapitulasi Nilai</h3>
+                            <h3 class="text-lg font-medium text-gray-800">Rekapitulasi Nilai Siswa</h3>
                         </div>
                         <div class="overflow-x-auto flex-1 p-0">
                             <table class="w-full text-left border-collapse">
@@ -635,6 +665,10 @@
 
         function simpanNilai(e) {
             e.preventDefault();
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             const idSiswa = parseInt(document.getElementById('n-siswa').value);
             const mapel = document.getElementById('n-mapel').value;
             const tugas = parseFloat(document.getElementById('n-tugas').value);
@@ -664,6 +698,8 @@
 
         // --- DATA ORANG TUA ---
         function renderDataOrtu(container) {
+            const isUserAdmin = isAdmin();
+            
             let tableRows = state.orangTua.map((o, index) => {
                 const s = state.siswa.find(siswa => siswa.id === o.idSiswa);
                 const namaSiswa = s ? s.nama : '<span class="text-red-500 italic">Siswa terhapus</span>';
@@ -674,25 +710,29 @@
                         <td class="py-3 px-4 text-sm text-gray-800">${o.namaOrtu}</td>
                         <td class="py-3 px-4 text-sm text-gray-600">${o.pekerjaan}</td>
                         <td class="py-3 px-4 text-sm text-gray-600">${o.kontak}</td>
+                        ${isUserAdmin ? `
                         <td class="py-3 px-4 text-sm">
                             <div class="flex space-x-2">
                                 <button onclick="openModalOrtu(${o.id})" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-1.5 rounded"><i class="fas fa-edit"></i></button>
                                 <button onclick="hapusOrtu(${o.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded"><i class="fas fa-trash"></i></button>
                             </div>
                         </td>
+                        ` : ''}
                     </tr>
                 `;
             }).join('');
 
-            if(state.orangTua.length === 0) tableRows = `<tr><td colspan="6" class="py-6 text-center text-gray-500">Belum ada data orang tua.</td></tr>`;
+            if(state.orangTua.length === 0) tableRows = `<tr><td colspan="${isUserAdmin ? '6' : '5'}" class="py-6 text-center text-gray-500">Belum ada data orang tua.</td></tr>`;
 
             container.innerHTML = `
                 <div class="bg-white rounded-lg shadow-sm border flex flex-col h-full">
                     <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <h3 class="text-lg font-medium text-gray-800">Daftar Orang Tua / Wali</h3>
+                        ${isUserAdmin ? `
                         <button onclick="openModalOrtu()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm text-sm flex items-center transition-colors">
                             <i class="fas fa-plus mr-2"></i> Tambah Data
                         </button>
+                        ` : ''}
                     </div>
                     <div class="overflow-x-auto flex-1">
                         <table class="w-full text-left border-collapse">
@@ -703,7 +743,7 @@
                                     <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Nama Orang Tua</th>
                                     <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Pekerjaan</th>
                                     <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">No. Kontak</th>
-                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>
+                                    ${isUserAdmin ? `<th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>` : ''}
                                 </tr>
                             </thead>
                             <tbody>${tableRows}</tbody>
@@ -714,6 +754,10 @@
         }
 
         function openModalOrtu(id = null) {
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda tidak memiliki izin.', 'error');
+                return;
+            }
             let ortu = id ? state.orangTua.find(o => o.id === id) : null;
             const modalTitle = ortu ? 'Edit Data Orang Tua' : 'Tambah Data Orang Tua';
             
@@ -767,6 +811,10 @@
 
         function saveOrtu(e, id) {
             e.preventDefault();
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             const newData = {
                 idSiswa: parseInt(document.getElementById('o-siswa').value),
                 namaOrtu: document.getElementById('o-nama').value,
@@ -790,6 +838,10 @@
         }
 
         function hapusOrtu(id) {
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             if(confirm('Hapus data orang tua ini?')) {
                 state.orangTua = state.orangTua.filter(o => o.id !== id);
                 saveData(); // Simpan ke Firebase
@@ -800,39 +852,45 @@
 
         // --- DATA AKADEMIK ---
         function renderDataAkademik(container) {
+            const isUserAdmin = isAdmin();
+            
             const listKelas = state.kelas.map(k => `
                 <div class="flex justify-between items-center py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 px-2 rounded transition-colors">
                     <span class="text-sm font-medium text-gray-700">${k}</span>
-                    <button onclick="hapusKelas('${k}')" class="text-red-500 hover:text-red-700 text-xs p-1"><i class="fas fa-trash"></i></button>
+                    ${isUserAdmin ? `<button onclick="hapusKelas('${k}')" class="text-red-500 hover:text-red-700 text-xs p-1"><i class="fas fa-trash"></i></button>` : ''}
                 </div>
             `).join('');
 
             const listMapel = state.mapel.map(m => `
                 <div class="flex justify-between items-center py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 px-2 rounded transition-colors">
                     <span class="text-sm font-medium text-gray-700">${m}</span>
-                    <button onclick="hapusMapel('${m}')" class="text-red-500 hover:text-red-700 text-xs p-1"><i class="fas fa-trash"></i></button>
+                    ${isUserAdmin ? `<button onclick="hapusMapel('${m}')" class="text-red-500 hover:text-red-700 text-xs p-1"><i class="fas fa-trash"></i></button>` : ''}
                 </div>
             `).join('');
 
             container.innerHTML = `
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-white rounded-lg shadow-sm border p-6 flex flex-col h-96">
-                        <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4"><i class="fas fa-chalkboard text-blue-500 mr-2"></i>Kelola Data Kelas</h3>
+                        <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4"><i class="fas fa-chalkboard text-blue-500 mr-2"></i>Data Kelas</h3>
+                        ${isUserAdmin ? `
                         <form onsubmit="tambahKelas(event)" class="mb-4 flex gap-2">
                             <input type="text" id="input-kelas" placeholder="Contoh: VII A" required class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
                             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Tambah</button>
                         </form>
+                        ` : ''}
                         <div class="flex-1 overflow-y-auto pr-2 border border-gray-100 rounded-lg p-2 bg-gray-50">
                             ${listKelas}
                         </div>
                     </div>
 
                     <div class="bg-white rounded-lg shadow-sm border p-6 flex flex-col h-96">
-                        <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4"><i class="fas fa-book text-green-500 mr-2"></i>Kelola Mata Pelajaran</h3>
+                        <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4"><i class="fas fa-book text-green-500 mr-2"></i>Mata Pelajaran</h3>
+                        ${isUserAdmin ? `
                         <form onsubmit="tambahMapel(event)" class="mb-4 flex gap-2">
                             <input type="text" id="input-mapel" placeholder="Nama Mata Pelajaran" required class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
                             <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Tambah</button>
                         </form>
+                        ` : ''}
                         <div class="flex-1 overflow-y-auto pr-2 border border-gray-100 rounded-lg p-2 bg-gray-50">
                             ${listMapel}
                         </div>
@@ -843,6 +901,10 @@
 
         function tambahKelas(e) {
             e.preventDefault();
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             const val = document.getElementById('input-kelas').value.trim();
             if(val && !state.kelas.includes(val)) {
                 state.kelas.push(val);
@@ -853,6 +915,10 @@
         }
 
         function hapusKelas(val) {
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             if(confirm(`Hapus kelas ${val}?`)) {
                 state.kelas = state.kelas.filter(k => k !== val);
                 saveData(); // Simpan ke Firebase
@@ -863,6 +929,10 @@
 
         function tambahMapel(e) {
             e.preventDefault();
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             const val = document.getElementById('input-mapel').value.trim();
             if(val && !state.mapel.includes(val)) {
                 state.mapel.push(val);
@@ -872,7 +942,15 @@
             }
         }
 
+        function htmlEscape(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
         function hapusMapel(val) {
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             if(confirm(`Hapus mapel ${val}?`)) {
                 state.mapel = state.mapel.filter(m => m !== val);
                 saveData(); // Simpan ke Firebase
@@ -883,6 +961,8 @@
 
         // --- LAPORAN ---
         function renderLaporan(container) {
+            const isUserAdmin = isAdmin();
+            
             container.innerHTML = `
                 <div class="bg-white rounded-lg shadow-sm border p-6 mb-6 print-hide">
                     <div class="flex justify-between items-center mb-4">
@@ -891,9 +971,11 @@
                             <button onclick="exportToExcel()" class="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1.5 rounded flex items-center transition-colors shadow-sm">
                                 <i class="fas fa-file-excel mr-1"></i> Export Excel
                             </button>
+                            ${isUserAdmin ? `
                             <button onclick="resetDataPabrik()" class="text-xs bg-red-100 text-red-600 hover:bg-red-200 px-3 py-1.5 rounded flex items-center transition-colors shadow-sm">
                                 <i class="fas fa-exclamation-triangle mr-1"></i> Reset Data
                             </button>
+                            ` : ''}
                         </div>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1056,6 +1138,10 @@
         }
 
         function resetDataPabrik() {
+            if (!isAdmin()) {
+                showNotification('Akses ditolak! Anda hanya dapat melihat data.', 'error');
+                return;
+            }
             if(confirm('PERINGATAN: Anda yakin ingin menghapus SEMUA data dan kembali ke pengaturan awal? Tindakan ini tidak dapat dibatalkan!')) {
                 const resetData = JSON.parse(JSON.stringify(defaultState));
                 state.siswa = resetData.siswa;
@@ -1148,6 +1234,7 @@
         window.generateLaporan = generateLaporan;
         window.resetDataPabrik = resetDataPabrik;
         window.exportToExcel = exportToExcel;
+        window.isAdmin = isAdmin;
 
         // Inisialisasi Autentikasi Firebase
         const initAuth = async () => {
