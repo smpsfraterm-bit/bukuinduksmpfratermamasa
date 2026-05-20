@@ -4,58 +4,78 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buku Induk Digital - SMP Frater Mamasa</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- SheetJS (Excel Export) -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .sidebar-link.active { background-color: #1e3a8a; color: #ffffff; border-left: 4px solid #3b82f6; }
-        @media print { .no-print { display: none !important; } .print-area { display: block !important; width: 100% !important; } }
-    </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body class="bg-slate-100 text-slate-800">
 
-    <div id="app"></div>
+    <div id="app">
+        <!-- Konten akan dirender di sini -->
+    </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-        // Konfigurasi Firebase (Sesuaikan dengan project Anda)
-        const firebaseConfig = {
-            projectId: "buku-induk-smp-frater-mamasa",
-            // Tambahkan apiKey, authDomain, dll sesuai konsol firebase Anda
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        // Link Logo (Google Direct Link API)
-        const LOGO_URL = "https://docs.google.com/uc?export=view&id=1cFZlURW-mPBPhb5qgQAMwxvI-PISCqkB";
-
+    <script>
+        // Menggunakan link proxy agar gambar lebih mudah dimuat oleh browser
+        const LOGO_URL = "https://lh3.googleusercontent.com/d/1cFZlURW-mPBPhb5qgQAMwxvI-PISCqkB";
+        
         let state = {
             isLoggedIn: false,
             role: null,
-            currentMenu: 'dashboard',
-            searchQuery: '',
-            filterKelas: '',
-            selectedSiswaId: null,
-            siswa: {},
-            kelas: ['VII-A', 'VII-B', 'VIII-A', 'VIII-B', 'IX-A', 'IX-B'],
-            mapel: ['Bahasa Indonesia', 'Matematika', 'IPA', 'IPS', 'Bahasa Inggris', 'Pendidikan Agama', 'PPKn']
+            currentMenu: 'dashboard'
         };
 
-        async function initAuth() { await signInAnonymously(auth); }
-        initAuth();
+        function renderApp() {
+            const app = document.getElementById('app');
+            
+            if (!state.isLoggedIn) {
+                app.innerHTML = `
+                    <div class="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+                        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm text-center">
+                            <img src="${LOGO_URL}" class="mx-auto h-32 mb-6 object-contain">
+                            <h2 class="text-2xl font-bold mb-6 text-slate-800">Login Sistem</h2>
+                            <form onsubmit="handleLogin(event)">
+                                <input id="loginPassword" type="password" placeholder="Masukkan Password" required class="w-full p-3 border rounded-lg mb-4 outline-none focus:ring-2 focus:ring-blue-600">
+                                <button type="submit" class="w-full bg-blue-700 hover:bg-blue-800 text-white py-3 rounded-lg font-bold transition">MASUK</button>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            } else {
+                app.innerHTML = `
+                    <div class="flex h-screen overflow-hidden">
+                        <aside class="w-64 bg-slate-900 text-white p-6 hidden md:flex flex-col shadow-lg">
+                            <div class="bg-white p-2 rounded-lg mb-6">
+                                <img src="${LOGO_URL}" class="h-20 mx-auto object-contain">
+                            </div>
+                            <h1 class="text-center font-bold mb-8 text-sm">SMP FRATER MAMASA</h1>
+                            <nav class="space-y-4">
+                                <button onclick="navigateTo('dashboard')" class="block w-full text-left hover:text-blue-400 p-2"><i class="fa-solid fa-house mr-2"></i> Dashboard</button>
+                                <button onclick="navigateTo('siswa')" class="block w-full text-left hover:text-blue-400 p-2"><i class="fa-solid fa-users mr-2"></i> Data Siswa</button>
+                                <button onclick="handleLogout()" class="block w-full text-left text-red-400 mt-10 p-2"><i class="fa-solid fa-right-from-bracket mr-2"></i> Logout</button>
+                            </nav>
+                        </aside>
+
+                        <main class="flex-1 p-8 overflow-y-auto">
+                            <div class="bg-white p-8 rounded-xl border shadow-sm">
+                                ${state.currentMenu === 'dashboard' ? `
+                                    <div class="flex flex-col items-center text-center">
+                                        <img src="${LOGO_URL}" class="h-32 mb-6 object-contain">
+                                        <h2 class="text-3xl font-bold text-slate-800">Selamat Datang</h2>
+                                        <p class="text-lg text-slate-600 mt-2 font-semibold">Sistem Buku Induk Digital</p>
+                                        <div class="mt-6 p-4 bg-slate-50 border rounded-lg w-full max-w-lg">
+                                            <p class="text-slate-600"><b>Alamat Sekolah:</b></p>
+                                            <p class="font-bold text-blue-800">Randanan Desa Buntubuda, Kec. Mamasa, Kab. Mamasa, Prov. Sulbar</p>
+                                        </div>
+                                    </div>
+                                ` : `
+                                    <h2 class="text-2xl font-bold mb-4">Data Siswa</h2>
+                                    <p class="text-slate-600">Anda masuk sebagai: <b>${state.role === 'admin' ? 'Administrator' : 'Pengguna (Read-Only)'}</b></p>
+                                `}
+                            </div>
+                        </main>
+                    </div>
+                `;
+            }
+        }
 
         window.handleLogin = function(e) {
             e.preventDefault();
@@ -63,13 +83,14 @@
             if (password === 'adminfrms') {
                 state.isLoggedIn = true;
                 state.role = 'admin';
+                renderApp();
             } else if (password === 'user123') {
                 state.isLoggedIn = true;
                 state.role = 'user';
+                renderApp();
             } else {
                 alert('Password salah!');
             }
-            renderApp();
         };
 
         window.handleLogout = function() {
@@ -82,52 +103,6 @@
             state.currentMenu = menu;
             renderApp();
         };
-
-        function renderApp() {
-            const appDiv = document.getElementById('app');
-            if (!state.isLoggedIn) {
-                appDiv.innerHTML = `
-                    <div class="min-h-screen flex items-center justify-center bg-slate-900">
-                        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm text-center">
-                            <img src="${LOGO_URL}" class="mx-auto h-24 mb-4 object-contain">
-                            <h2 class="text-xl font-bold mb-6">Login Buku Induk</h2>
-                            <form onsubmit="handleLogin(event)">
-                                <input id="loginPassword" type="password" placeholder="Masukkan Password" required class="w-full p-3 border rounded-lg mb-4 outline-none">
-                                <button class="w-full bg-blue-700 text-white py-3 rounded-lg font-bold">MASUK</button>
-                            </form>
-                        </div>
-                    </div>
-                `;
-            } else {
-                appDiv.innerHTML = `
-                    <div class="flex h-screen">
-                        <aside class="w-64 bg-slate-900 text-white p-6 no-print">
-                            <img src="${LOGO_URL}" class="h-16 mx-auto mb-4 bg-white p-1 rounded">
-                            <h1 class="text-center font-bold mb-8">SMP FRATER MAMASA</h1>
-                            <nav class="space-y-4">
-                                <button onclick="navigateTo('dashboard')" class="block w-full text-left hover:text-blue-400"><i class="fa-solid fa-house mr-2"></i> Dashboard</button>
-                                <button onclick="navigateTo('siswa')" class="block w-full text-left hover:text-blue-400"><i class="fa-solid fa-users mr-2"></i> Data Siswa</button>
-                                <button onclick="handleLogout()" class="block w-full text-left text-red-400 mt-10"><i class="fa-solid fa-right-from-bracket mr-2"></i> Logout</button>
-                            </nav>
-                        </aside>
-                        <main class="flex-1 p-8 overflow-y-auto">
-                            ${state.currentMenu === 'dashboard' ? `
-                                <div class="bg-white p-6 rounded-xl border">
-                                    <h2 class="text-2xl font-bold">Selamat Datang di Sistem Buku Induk Digital</h2>
-                                    <p class="text-slate-600 mt-2"><b>Alamat Sekolah:</b> Randanan Desa Buntubuda, Kec. Mamasa, Kab. Mamasa, Prov. Sulbar</p>
-                                </div>
-                            ` : `
-                                <div class="bg-white p-6 rounded-xl border">
-                                    <h2 class="text-xl font-bold capitalize">${state.currentMenu}</h2>
-                                    <p>Halaman ini menampilkan data sekolah.</p>
-                                    ${state.role === 'admin' ? '<button class="bg-blue-600 text-white px-4 py-2 mt-4 rounded">Tambah Data</button>' : '<p class="text-red-500 mt-4 text-sm">Mode Read-Only (Hanya Lihat)</p>'}
-                                </div>
-                            `}
-                        </main>
-                    </div>
-                `;
-            }
-        }
 
         renderApp();
     </script>
