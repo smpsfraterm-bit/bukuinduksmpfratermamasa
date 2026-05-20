@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Pengolahan Buku Induk - SMP Frater Mamasa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 0.3s ease-out, transform 0.3s ease-out; }
+        
+        @media print {
+            body * { visibility: hidden; }
+            #print-area, #print-area * { visibility: visible; }
+            #print-area { position: absolute; left: 0; top: 0; width: 100%; border: none !important; box-shadow: none !important; }
+            #sidebar, header, button, .print-hide { display: none !important; }
+            body { background-color: white; }
+        }
+    </style>
+</head>
+<body class="text-gray-800 antialiased overflow-hidden">
+
+    <div id="app" class="w-full h-screen flex"></div>
+    <div id="notification-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2"></div>
+    <div id="modal-container"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Inisialisasi Firebase menggunakan konfigurasi resmi SMP Frater Mamasa
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjmu4hpZXYbeyCAwDgYDFnTm8DAMGbyyg",
+            authDomain: "buku-induk-smp-frater-mamasa.firebaseapp.com",
+            projectId: "buku-induk-smp-frater-mamasa",
+            storageBucket: "buku-induk-smp-frater-mamasa.firebasestorage.app",
+            messagingSenderId: "494069572524",
+            appId: "1:494069572524:web:d67bc12d51e51d0db01009",
+            measurementId: "G-F28XG4HSLH"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'buku-induk-sekolah';
+        let firebaseUser = null;
+
+        // Default Data (Hanya digunakan jika database kosong)
+        const defaultState = {
+            isLoggedIn: false,
+            currentUser: null,
+            currentView: 'dashboard',
+            siswa: [
+                { id: 1, nis: '001', nama: 'Andi Pratama', kelas: 'VII A', tempat: 'Polewali', tglLahir: '2010-05-12', jk: 'L', alamat: 'Jl. Pendidikan No. 1' },
+                { id: 2, nis: '002', nama: 'Budi Santoso', kelas: 'VII B', tempat: 'Makassar', tglLahir: '2009-11-23', jk: 'L', alamat: 'Jl. Perintis' },
+                { id: 3, nis: '003', nama: 'Citra Lestari', kelas: 'VII A', tempat: 'Mamasa', tglLahir: '2010-01-05', jk: 'P', alamat: 'Jl. Poros Mamasa' },
+                { id: 4, nis: '004', nama: 'Dinda Aulia', kelas: 'VII C', tempat: 'Polewali', tglLahir: '2010-08-17', jk: 'P', alamat: 'Jl. Kartini' }
+            ],
+            nilai: [
+                { id: 1, idSiswa: 1, mapel: 'Matematika', tugas: 85, uts: 80, uas: 82, akhir: 82.33 },
+                { id: 2, idSiswa: 2, mapel: 'Matematika', tugas: 70, uts: 75, uas: 80, akhir: 77.67 },
+                { id: 3, idSiswa: 3, mapel: 'Matematika', tugas: 90, uts: 88, uas: 92, akhir: 90.00 }
+            ],
+            orangTua: [],
+            mapel: ['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris', 'IPA', 'IPS', 'PKn'],
+            kelas: ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'IX A', 'IX B']
+        };
+
+        // Initialize state
+        let state = JSON.parse(JSON.stringify(defaultState));
+        
+        function loadData() {
+            if (!firebaseUser) return;
+            const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'database', 'bukuInduk');
+            
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const savedData = docSnap.data();
+                    // Merge saved data dari Cloud, tapi pertahankan status login aplikasi
+                    state = { ...state, ...savedData };
+                } else {
+                    // Jika data di server belum ada, simpan data default
+                    saveData();
+                }
+                
+                // Perbarui tampilan secara realtime jika user sedang masuk di aplikasi
+                if (state.isLoggedIn) {
+                    renderViewContent();
+                }
+            }, (error) => {
+                console.error("Firebase Read Error: ", error);
+            });
+        }
+
+        async function saveData() {
+            if (!firebaseUser) return;
+            const dataToSave = {
+                siswa: state.siswa,
+                nilai: state.nilai,
+                orangTua: state.orangTua,
+                mapel: state.mapel,
+                kelas: state.kelas
+            };
+            
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'database', 'bukuInduk');
+                await setDoc(docRef, dataToSave);
+            } catch (error) {
+                console.error("Firebase Save Error: ", error);
+                showNotification("Gagal menyimpan ke server Cloud", "error");
+            }
+        }
+
+        let chartInstance = null;
+
+        function showNotification(message, type = 'success') {
+            const container = document.getElementById('notification-container');
+            const notif = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : 'bg-red-500';
+            notif.className = `${bgColor} text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-3 transition-opacity duration-300 opacity-0`;
+            notif.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> <span>${message}</span>`;
+            
+            container.appendChild(notif);
+            setTimeout(() => notif.classList.remove('opacity-0'), 10);
+            
+            setTimeout(() => {
+                notif.classList.add('opacity-0');
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
+        }
+
+        function formatAngka(angka) {
+            return parseFloat(angka).toFixed(2);
+        }
+
+        function handleLogin(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            // Simple dummy auth
+            state.isLoggedIn = true;
+            state.currentUser = { username: username, role: username.toLowerCase() === 'guru' ? 'Guru' : 'Admin' };
+            state.currentView = 'dashboard';
+            renderApp();
+            showNotification(`Selamat datang, ${state.currentUser.role}!`);
+        }
+
+        function handleLogout() {
+            state.isLoggedIn = false;
+            state.currentUser = null;
+            state.currentView = 'dashboard';
+            renderApp();
+        }
+
+        function navigateTo(viewName) {
+            state.currentView = viewName;
+            renderViewContent(); // HANYA render konten saja untuk mencegah Infinite Loop
+            
+            // Highlight active sidebar
+            document.querySelectorAll('.sidebar-item').forEach(el => {
+                el.classList.remove('border-l-4', 'border-blue-500', 'bg-gray-800', 'text-white');
+                el.classList.add('text-gray-300');
+            });
+            const activeEl = document.getElementById(`nav-${viewName}`);
+            if(activeEl) {
+                activeEl.classList.add('border-l-4', 'border-blue-500', 'bg-gray-800', 'text-white');
+                activeEl.classList.remove('text-gray-300');
+            }
+        }
+
+        function renderApp() {
+            const appEl = document.getElementById('app');
+            if (!state.isLoggedIn) {
+                appEl.innerHTML = `
+                    <div class="w-full flex items-center justify-center bg-gray-100">
+                        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+                            <div class="text-center mb-8">
+                                <!-- Menggunakan file logo_sekolah.png yang diunggah -->
+                                <img src="logo_sekolah.png" onerror="this.src='https://placehold.co/100x100/ffffff/000000?text=SMP+Frater'" alt="Logo SMP Frater Mamasa" class="h-28 mx-auto mb-4 object-contain">
+                                <h1 class="text-2xl font-bold text-gray-800">Buku Induk Digital</h1>
+                                <p class="text-sm text-gray-500 mt-2">SMP Frater Mamasa</p>
+                            </div>
+                            <form id="login-form" onsubmit="handleLogin(event)">
+                                <div class="mb-5">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-user text-gray-400"></i></div>
+                                        <input type="text" id="username" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Masukkan username" required>
+                                    </div>
+                                </div>
+                                <div class="mb-6">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-lock text-gray-400"></i></div>
+                                        <input type="password" id="password" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Masukkan password" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">
+                                    Login
+                                </button>
+                                <p class="text-xs text-center text-gray-400 mt-4">Ketik 'guru' sebagai username untuk role Guru. Selain itu akan menjadi Admin.</p>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Main Layout (Sidebar + Content)
+                appEl.innerHTML = `
+                    <!-- Sidebar -->
+                    <aside id="sidebar" class="bg-gray-900 text-white w-64 flex-shrink-0 hidden md:flex flex-col h-full transition-all duration-300 absolute md:relative z-20">
+                        <div class="h-16 flex items-center px-6 border-b border-gray-800 bg-gray-900 flex-shrink-0">
+                            <!-- Logo sekolah di sidebar -->
+                            <img src="logo_sekolah.png" onerror="this.src='https://placehold.co/40x40/ffffff/000000?text=SMP'" alt="Logo" class="h-9 w-9 object-contain mr-3 bg-white rounded-full p-0.5">
+                            <span class="text-sm font-bold tracking-wider">SMP FRATER MAMASA</span>
+                            <button onclick="document.getElementById('sidebar').classList.add('hidden')" class="md:hidden ml-auto text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+                        </div>
+                        <nav class="flex-1 overflow-y-auto py-4">
+                            <ul class="space-y-1">
+                                <li>
+                                    <a href="#" id="nav-dashboard" onclick="navigateTo('dashboard')" class="sidebar-item flex items-center px-6 py-3 text-white border-l-4 border-blue-500 bg-gray-800 hover:text-white transition-colors">
+                                        <i class="fas fa-chart-line w-5 mr-3"></i> Dashboard
+                                    </a>
+                                </li>
+                                <li class="px-6 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4">Data Master</li>
+                                <li>
+                                    <a href="#" id="nav-datasiswa" onclick="navigateTo('datasiswa')" class="sidebar-item flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                                        <i class="fas fa-user-graduate w-5 mr-3"></i> Data Siswa
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="#" id="nav-dataortu" onclick="navigateTo('dataortu')" class="sidebar-item flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                                        <i class="fas fa-users w-5 mr-3"></i> Data Orang Tua
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="#" id="nav-dataakademik" onclick="navigateTo('dataakademik')" class="sidebar-item flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                                        <i class="fas fa-school w-5 mr-3"></i> Data Akademik
+                                    </a>
+                                </li>
+                                <li class="px-6 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4">Akademik</li>
+                                <li>
+                                    <a href="#" id="nav-inputnilai" onclick="navigateTo('inputnilai')" class="sidebar-item flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                                        <i class="fas fa-clipboard-list w-5 mr-3"></i> Input Nilai
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="#" id="nav-laporan" onclick="navigateTo('laporan')" class="sidebar-item flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">
+                                        <i class="fas fa-file-alt w-5 mr-3"></i> Laporan
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
+                        <div class="p-4 border-t border-gray-800">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold">${state.currentUser.username.charAt(0).toUpperCase()}</div>
+                                <div class="ml-3">
+                                    <p class="text-sm font-medium">${state.currentUser.username}</p>
+                                    <p class="text-xs text-gray-400">${state.currentUser.role}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <!-- Main Content -->
+                    <div class="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-gray-50">
+                        <!-- Topbar -->
+                        <header class="h-16 bg-white shadow-sm flex items-center justify-between px-6 z-10 flex-shrink-0">
+                            <div class="flex items-center">
+                                <button onclick="document.getElementById('sidebar').classList.remove('hidden')" class="md:hidden text-gray-500 hover:text-gray-700 mr-4">
+                                    <i class="fas fa-bars text-xl"></i>
+                                </button>
+                                <h2 id="page-title" class="text-xl font-semibold text-gray-800 capitalize"></h2>
+                            </div>
+                            <div class="flex items-center">
+                                <button onclick="handleLogout()" class="text-gray-500 hover:text-red-600 transition-colors flex items-center text-sm font-medium">
+                                    <i class="fas fa-sign-out-alt mr-2"></i> Logout
+                                </button>
+                            </div>
+                        </header>
+                        
+                        <!-- Content Area -->
+                        <main id="main-content" class="flex-1 overflow-x-hidden overflow-y-auto p-6"></main>
+                    </div>
+                `;
+                
+                // Set active sidebar item initially
+                navigateTo(state.currentView); 
+            }
+        }
+
+        function renderViewContent() {
+            const contentEl = document.getElementById('main-content');
+            const titleEl = document.getElementById('page-title');
+            
+            // Clean up chart to prevent overlay issues
+            if (chartInstance) {
+                chartInstance.destroy();
+                chartInstance = null;
+            }
+
+            if (!contentEl || !titleEl) return;
+
+            // Set Title
+            titleEl.innerText = state.currentView === 'dashboard' ? 'Dashboard' : 
+                               state.currentView === 'datasiswa' ? 'Data Siswa' : 
+                               state.currentView === 'dataortu' ? 'Data Orang Tua' : 
+                               state.currentView === 'dataakademik' ? 'Data Akademik' : 
+                               state.currentView === 'inputnilai' ? 'Input Nilai' : 'Laporan';
+
+            if (state.currentView === 'dashboard') {
+                renderDashboard(contentEl);
+            } else if (state.currentView === 'datasiswa') {
+                renderDataSiswa(contentEl);
+            } else if (state.currentView === 'inputnilai') {
+                renderInputNilai(contentEl);
+            } else if (state.currentView === 'dataortu') {
+                renderDataOrtu(contentEl);
+            } else if (state.currentView === 'dataakademik') {
+                renderDataAkademik(contentEl);
+            } else if (state.currentView === 'laporan') {
+                renderLaporan(contentEl);
+            }
+        }
+
+        function renderDashboard(container) {
+            container.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-white rounded-lg shadow-sm border p-6 flex items-center">
+                        <div class="rounded-full bg-blue-100 p-3 mr-4"><i class="fas fa-users text-blue-600 text-xl w-6 h-6 text-center"></i></div>
+                        <div><p class="text-sm text-gray-500 font-medium">Total Siswa</p><p class="text-2xl font-bold text-gray-800">${state.siswa.length}</p></div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm border p-6 flex items-center">
+                        <div class="rounded-full bg-green-100 p-3 mr-4"><i class="fas fa-chalkboard text-green-600 text-xl w-6 h-6 text-center"></i></div>
+                        <div><p class="text-sm text-gray-500 font-medium">Total Kelas</p><p class="text-2xl font-bold text-gray-800">${state.kelas.length}</p></div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm border p-6 flex items-center">
+                        <div class="rounded-full bg-yellow-100 p-3 mr-4"><i class="fas fa-user-tie text-yellow-600 text-xl w-6 h-6 text-center"></i></div>
+                        <div><p class="text-sm text-gray-500 font-medium">Total Guru</p><p class="text-2xl font-bold text-gray-800">15</p></div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm border p-6 flex items-center">
+                        <div class="rounded-full bg-purple-100 p-3 mr-4"><i class="fas fa-book text-purple-600 text-xl w-6 h-6 text-center"></i></div>
+                        <div><p class="text-sm text-gray-500 font-medium">Mata Pelajaran</p><p class="text-2xl font-bold text-gray-800">${state.mapel.length}</p></div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm border p-6">
+                    <h3 class="text-lg font-medium text-gray-800 mb-4">Jumlah Siswa per Kelas</h3>
+                    <div class="relative h-80 w-full"><canvas id="dashboardChart"></canvas></div>
+                </div>
+            `;
+
+            // Initialize chart in next tick
+            setTimeout(() => {
+                const canvasEl = document.getElementById('dashboardChart');
+                if (!canvasEl) return;
+                
+                // Calculate student count per class
+                const classCounts = {};
+                state.kelas.forEach(k => classCounts[k] = 0);
+                state.siswa.forEach(s => {
+                    if(classCounts[s.kelas] !== undefined) classCounts[s.kelas]++;
+                });
+
+                const ctx = canvasEl.getContext('2d');
+                chartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(classCounts),
+                        datasets: [{
+                            label: 'Jumlah Siswa',
+                            data: Object.values(classCounts),
+                            backgroundColor: '#3b82f6',
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                    }
+                });
+            }, 100);
+        }
+
+        function renderDataSiswa(container) {
+            let tableRows = state.siswa.map((s, index) => `
+                <tr class="hover:bg-gray-50 border-b border-gray-100">
+                    <td class="py-3 px-4 text-sm text-gray-600">${index + 1}</td>
+                    <td class="py-3 px-4 text-sm font-medium text-gray-800">${s.nis}</td>
+                    <td class="py-3 px-4 text-sm text-gray-800">${s.nama}</td>
+                    <td class="py-3 px-4 text-sm text-gray-600">${s.kelas}</td>
+                    <td class="py-3 px-4 text-sm text-gray-600">${s.tempat}, ${s.tglLahir}</td>
+                    <td class="py-3 px-4 text-sm">
+                        <div class="flex space-x-2">
+                            <button onclick="openModalSiswa(${s.id})" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-1.5 rounded"><i class="fas fa-edit"></i></button>
+                            <button onclick="hapusSiswa(${s.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            if(state.siswa.length === 0) {
+                tableRows = `<tr><td colspan="6" class="py-6 text-center text-gray-500">Belum ada data siswa.</td></tr>`;
+            }
+
+            container.innerHTML = `
+                <div class="bg-white rounded-lg shadow-sm border flex flex-col h-full">
+                    <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div class="relative w-full sm:w-64">
+                            <input type="text" placeholder="Cari siswa..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm">
+                            <i class="fas fa-search absolute left-3 top-2.5 text-gray-400"></i>
+                        </div>
+                        <button onclick="openModalSiswa()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm text-sm flex items-center transition-colors">
+                            <i class="fas fa-plus mr-2"></i> Tambah Data
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto flex-1">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 border-b border-gray-200">
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">No</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">NIS</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Nama Siswa</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Kelas</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Tempat, Tgl Lahir</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>${tableRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function openModalSiswa(id = null) {
+            let siswa = id ? state.siswa.find(s => s.id === id) : null;
+            const modalTitle = siswa ? 'Edit Data Siswa' : 'Tambah Data Siswa';
+            
+            const modalHTML = `
+                <div id="siswa-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden modal-enter modal-enter-active">
+                        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <h3 class="text-lg font-semibold text-gray-800">${modalTitle}</h3>
+                            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-xl"></i></button>
+                        </div>
+                        <div class="p-6">
+                            <form id="form-siswa" onsubmit="saveSiswa(event, ${id})">
+                                <div class="grid grid-cols-2 gap-4 mb-4">
+                                    <div class="col-span-2 sm:col-span-1">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">NIS</label>
+                                        <input type="text" id="nis" value="${siswa ? siswa.nis : ''}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                    <div class="col-span-2 sm:col-span-1">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
+                                        <select id="kelas" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                            <option value="">Pilih Kelas</option>
+                                            ${state.kelas.map(k => `<option value="${k}" ${siswa && siswa.kelas === k ? 'selected' : ''}>${k}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="col-span-2">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                                        <input type="text" id="nama" value="${siswa ? siswa.nama : ''}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                    <div class="col-span-2 sm:col-span-1">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Tempat Lahir</label>
+                                        <input type="text" id="tempat" value="${siswa ? siswa.tempat : ''}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                    <div class="col-span-2 sm:col-span-1">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Lahir</label>
+                                        <input type="date" id="tglLahir" value="${siswa ? siswa.tglLahir : ''}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                    <div class="col-span-2">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Jenis Kelamin</label>
+                                        <select id="jk" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                            <option value="L" ${siswa && siswa.jk === 'L' ? 'selected' : ''}>Laki-laki</option>
+                                            <option value="P" ${siswa && siswa.jk === 'P' ? 'selected' : ''}>Perempuan</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-6 flex justify-end space-x-3">
+                                    <button type="button" onclick="closeModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium">Batal</button>
+                                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">Simpan Data</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('modal-container').innerHTML = modalHTML;
+        }
+
+        function closeModal() {
+            document.getElementById('modal-container').innerHTML = '';
+        }
+
+        // Simpan data siswa ke Firebase
+        function saveSiswa(e, id) {
+            e.preventDefault();
+            const newData = {
+                nis: document.getElementById('nis').value,
+                nama: document.getElementById('nama').value,
+                kelas: document.getElementById('kelas').value,
+                tempat: document.getElementById('tempat').value,
+                tglLahir: document.getElementById('tglLahir').value,
+                jk: document.getElementById('jk').value,
+            };
+
+            if (id) {
+                // Edit
+                const index = state.siswa.findIndex(s => s.id === id);
+                if(index !== -1) {
+                    state.siswa[index] = { ...state.siswa[index], ...newData };
+                    showNotification('Data siswa berhasil diupdate!');
+                }
+            } else {
+                // Add
+                const newId = state.siswa.length > 0 ? Math.max(...state.siswa.map(s => s.id)) + 1 : 1;
+                state.siswa.push({ id: newId, ...newData });
+                showNotification('Data siswa baru berhasil ditambahkan!');
+            }
+            
+            saveData(); // Simpan ke Firebase
+            closeModal();
+            renderViewContent(); // Refresh table
+        }
+
+        function hapusSiswa(id) {
+            if(confirm('Apakah Anda yakin ingin menghapus data siswa ini?')) {
+                state.siswa = state.siswa.filter(s => s.id !== id);
+                // Hapus juga nilai yang terhubung
+                state.nilai = state.nilai.filter(n => n.idSiswa !== id);
+                saveData(); // Simpan ke Firebase
+                showNotification('Data siswa berhasil dihapus.');
+                renderViewContent();
+            }
+        }
+
+        function renderInputNilai(container) {
+            // Gabungkan data Siswa dan Nilai
+            let tableRows = state.nilai.map((n, index) => {
+                const s = state.siswa.find(siswa => siswa.id === n.idSiswa);
+                if(!s) return '';
+                return `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100">
+                        <td class="py-3 px-4 text-sm text-gray-600">${index + 1}</td>
+                        <td class="py-3 px-4 text-sm font-medium text-gray-800">${s.nis}</td>
+                        <td class="py-3 px-4 text-sm text-gray-800">${s.nama}</td>
+                        <td class="py-3 px-4 text-sm text-gray-600">${n.mapel}</td>
+                        <td class="py-3 px-4 text-sm text-center">${n.tugas}</td>
+                        <td class="py-3 px-4 text-sm text-center">${n.uts}</td>
+                        <td class="py-3 px-4 text-sm text-center">${n.uas}</td>
+                        <td class="py-3 px-4 text-sm text-center font-bold text-blue-600">${formatAngka(n.akhir)}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            if(state.nilai.length === 0) tableRows = `<tr><td colspan="8" class="py-6 text-center text-gray-500">Belum ada data nilai.</td></tr>`;
+
+            container.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Form Input Nilai -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4">Input Nilai Siswa</h3>
+                        <form onsubmit="simpanNilai(event)">
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Pilih Siswa</label>
+                                    <select id="n-siswa" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                        <option value="">Pilih Siswa...</option>
+                                        ${state.siswa.map(s => `<option value="${s.id}">${s.nis} - ${s.nama}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Mata Pelajaran</label>
+                                    <select id="n-mapel" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                        <option value="">Pilih Mapel...</option>
+                                        ${state.mapel.map(m => `<option value="${m}">${m}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Nilai Tugas</label>
+                                        <input type="number" id="n-tugas" min="0" max="100" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Nilai UTS</label>
+                                        <input type="number" id="n-uts" min="0" max="100" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Nilai UAS</label>
+                                        <input type="number" id="n-uas" min="0" max="100" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                </div>
+                                <div class="pt-2">
+                                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm text-sm transition-colors">
+                                        Simpan Nilai
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Tabel Rekap Nilai -->
+                    <div class="lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col">
+                        <div class="p-5 border-b border-gray-100 flex justify-between items-center">
+                            <h3 class="text-lg font-medium text-gray-800">Rekapitulasi Nilai</h3>
+                        </div>
+                        <div class="overflow-x-auto flex-1 p-0">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 border-b border-gray-200">
+                                        <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">No</th>
+                                        <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">NIS</th>
+                                        <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Nama</th>
+                                        <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Mapel</th>
+                                        <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-center">Tugas</th>
+                                        <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-center">UTS</th>
+                                        <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-center">UAS</th>
+                                        <th class="py-3 px-4 text-xs font-semibold text-blue-600 uppercase tracking-wider text-center">Akhir</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${tableRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function simpanNilai(e) {
+            e.preventDefault();
+            const idSiswa = parseInt(document.getElementById('n-siswa').value);
+            const mapel = document.getElementById('n-mapel').value;
+            const tugas = parseFloat(document.getElementById('n-tugas').value);
+            const uts = parseFloat(document.getElementById('n-uts').value);
+            const uas = parseFloat(document.getElementById('n-uas').value);
+
+            // Rumus perhitungan nilai akhir (Misal: 20% Tugas, 30% UTS, 50% UAS)
+            const nilaiAkhir = (tugas * 0.2) + (uts * 0.3) + (uas * 0.5);
+
+            // Periksa apakah nilai siswa pada mata pelajaran tersebut sudah ada
+            const existingIndex = state.nilai.findIndex(n => n.idSiswa === idSiswa && n.mapel === mapel);
+
+            if (existingIndex !== -1) {
+                // Perbarui
+                state.nilai[existingIndex] = { ...state.nilai[existingIndex], tugas, uts, uas, akhir: nilaiAkhir };
+                showNotification('Data nilai berhasil diperbarui!');
+            } else {
+                // Tambah Baru
+                const newId = state.nilai.length > 0 ? Math.max(...state.nilai.map(n => n.id)) + 1 : 1;
+                state.nilai.push({ id: newId, idSiswa, mapel, tugas, uts, uas, akhir: nilaiAkhir });
+                showNotification('Data nilai baru berhasil disimpan!');
+            }
+
+            saveData(); // Simpan ke Firebase
+            renderViewContent(); // Refresh UI
+        }
+
+        // --- DATA ORANG TUA ---
+        function renderDataOrtu(container) {
+            let tableRows = state.orangTua.map((o, index) => {
+                const s = state.siswa.find(siswa => siswa.id === o.idSiswa);
+                const namaSiswa = s ? s.nama : '<span class="text-red-500 italic">Siswa terhapus</span>';
+                return `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100">
+                        <td class="py-3 px-4 text-sm text-gray-600">${index + 1}</td>
+                        <td class="py-3 px-4 text-sm font-medium text-gray-800">${namaSiswa}</td>
+                        <td class="py-3 px-4 text-sm text-gray-800">${o.namaOrtu}</td>
+                        <td class="py-3 px-4 text-sm text-gray-600">${o.pekerjaan}</td>
+                        <td class="py-3 px-4 text-sm text-gray-600">${o.kontak}</td>
+                        <td class="py-3 px-4 text-sm">
+                            <div class="flex space-x-2">
+                                <button onclick="openModalOrtu(${o.id})" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-1.5 rounded"><i class="fas fa-edit"></i></button>
+                                <button onclick="hapusOrtu(${o.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            if(state.orangTua.length === 0) tableRows = `<tr><td colspan="6" class="py-6 text-center text-gray-500">Belum ada data orang tua.</td></tr>`;
+
+            container.innerHTML = `
+                <div class="bg-white rounded-lg shadow-sm border flex flex-col h-full">
+                    <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <h3 class="text-lg font-medium text-gray-800">Daftar Orang Tua / Wali</h3>
+                        <button onclick="openModalOrtu()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm text-sm flex items-center transition-colors">
+                            <i class="fas fa-plus mr-2"></i> Tambah Data
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto flex-1">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-50 border-b border-gray-200">
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">No</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Nama Siswa</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Nama Orang Tua</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Pekerjaan</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">No. Kontak</th>
+                                    <th class="py-3 px-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>${tableRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function openModalOrtu(id = null) {
+            let ortu = id ? state.orangTua.find(o => o.id === id) : null;
+            const modalTitle = ortu ? 'Edit Data Orang Tua' : 'Tambah Data Orang Tua';
+            
+            const modalHTML = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden modal-enter modal-enter-active">
+                        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <h3 class="text-lg font-semibold text-gray-800">${modalTitle}</h3>
+                            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-xl"></i></button>
+                        </div>
+                        <div class="p-6">
+                            <form onsubmit="saveOrtu(event, ${id})">
+                                <div class="grid grid-cols-1 gap-4 mb-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Pilih Siswa</label>
+                                        <select id="o-siswa" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                            <option value="">Pilih Siswa...</option>
+                                            ${state.siswa.map(s => `<option value="${s.id}" ${ortu && ortu.idSiswa === s.id ? 'selected' : ''}>${s.nis} - ${s.nama}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Nama Orang Tua / Wali</label>
+                                        <input type="text" id="o-nama" value="${ortu ? ortu.namaOrtu : ''}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Pekerjaan</label>
+                                            <input type="text" id="o-pekerjaan" value="${ortu ? ortu.pekerjaan : ''}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">No. Kontak (HP)</label>
+                                            <input type="text" id="o-kontak" value="${ortu ? ortu.kontak : ''}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Alamat Lengkap</label>
+                                        <textarea id="o-alamat" rows="2" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none">${ortu ? ortu.alamat : ''}</textarea>
+                                    </div>
+                                </div>
+                                <div class="mt-6 flex justify-end space-x-3">
+                                    <button type="button" onclick="closeModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium">Batal</button>
+                                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">Simpan</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('modal-container').innerHTML = modalHTML;
+        }
+
+        function saveOrtu(e, id) {
+            e.preventDefault();
+            const newData = {
+                idSiswa: parseInt(document.getElementById('o-siswa').value),
+                namaOrtu: document.getElementById('o-nama').value,
+                pekerjaan: document.getElementById('o-pekerjaan').value,
+                kontak: document.getElementById('o-kontak').value,
+                alamat: document.getElementById('o-alamat').value,
+            };
+
+            if (id) {
+                const index = state.orangTua.findIndex(o => o.id === id);
+                if(index !== -1) state.orangTua[index] = { ...state.orangTua[index], ...newData };
+                showNotification('Data orang tua berhasil diupdate!');
+            } else {
+                const newId = state.orangTua.length > 0 ? Math.max(...state.orangTua.map(o => o.id)) + 1 : 1;
+                state.orangTua.push({ id: newId, ...newData });
+                showNotification('Data orang tua baru berhasil ditambahkan!');
+            }
+            saveData(); // Simpan ke Firebase
+            closeModal();
+            renderViewContent();
+        }
+
+        function hapusOrtu(id) {
+            if(confirm('Hapus data orang tua ini?')) {
+                state.orangTua = state.orangTua.filter(o => o.id !== id);
+                saveData(); // Simpan ke Firebase
+                showNotification('Data orang tua dihapus.');
+                renderViewContent();
+            }
+        }
+
+        // --- DATA AKADEMIK ---
+        function renderDataAkademik(container) {
+            const listKelas = state.kelas.map(k => `
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 px-2 rounded transition-colors">
+                    <span class="text-sm font-medium text-gray-700">${k}</span>
+                    <button onclick="hapusKelas('${k}')" class="text-red-500 hover:text-red-700 text-xs p-1"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('');
+
+            const listMapel = state.mapel.map(m => `
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 px-2 rounded transition-colors">
+                    <span class="text-sm font-medium text-gray-700">${m}</span>
+                    <button onclick="hapusMapel('${m}')" class="text-red-500 hover:text-red-700 text-xs p-1"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('');
+
+            container.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-lg shadow-sm border p-6 flex flex-col h-96">
+                        <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4"><i class="fas fa-chalkboard text-blue-500 mr-2"></i>Kelola Data Kelas</h3>
+                        <form onsubmit="tambahKelas(event)" class="mb-4 flex gap-2">
+                            <input type="text" id="input-kelas" placeholder="Contoh: VII A" required class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Tambah</button>
+                        </form>
+                        <div class="flex-1 overflow-y-auto pr-2 border border-gray-100 rounded-lg p-2 bg-gray-50">
+                            ${listKelas}
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow-sm border p-6 flex flex-col h-96">
+                        <h3 class="text-lg font-medium text-gray-800 border-b pb-3 mb-4"><i class="fas fa-book text-green-500 mr-2"></i>Kelola Mata Pelajaran</h3>
+                        <form onsubmit="tambahMapel(event)" class="mb-4 flex gap-2">
+                            <input type="text" id="input-mapel" placeholder="Nama Mata Pelajaran" required class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Tambah</button>
+                        </form>
+                        <div class="flex-1 overflow-y-auto pr-2 border border-gray-100 rounded-lg p-2 bg-gray-50">
+                            ${listMapel}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function tambahKelas(e) {
+            e.preventDefault();
+            const val = document.getElementById('input-kelas').value.trim();
+            if(val && !state.kelas.includes(val)) {
+                state.kelas.push(val);
+                saveData(); // Simpan ke Firebase
+                showNotification(`Kelas ${val} ditambahkan.`);
+                renderViewContent();
+            }
+        }
+
+        function hapusKelas(val) {
+            if(confirm(`Hapus kelas ${val}?`)) {
+                state.kelas = state.kelas.filter(k => k !== val);
+                saveData(); // Simpan ke Firebase
+                showNotification(`Kelas ${val} dihapus.`);
+                renderViewContent();
+            }
+        }
+
+        function tambahMapel(e) {
+            e.preventDefault();
+            const val = document.getElementById('input-mapel').value.trim();
+            if(val && !state.mapel.includes(val)) {
+                state.mapel.push(val);
+                saveData(); // Simpan ke Firebase
+                showNotification(`Mapel ${val} ditambahkan.`);
+                renderViewContent();
+            }
+        }
+
+        function hapusMapel(val) {
+            if(confirm(`Hapus mapel ${val}?`)) {
+                state.mapel = state.mapel.filter(m => m !== val);
+                saveData(); // Simpan ke Firebase
+                showNotification(`Mapel ${val} dihapus.`);
+                renderViewContent();
+            }
+        }
+
+        // --- LAPORAN ---
+        function renderLaporan(container) {
+            container.innerHTML = `
+                <div class="bg-white rounded-lg shadow-sm border p-6 mb-6 print-hide">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-medium text-gray-800">Pilih Jenis Laporan</h3>
+                        <div class="flex gap-2">
+                            <button onclick="exportToExcel()" class="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1.5 rounded flex items-center transition-colors shadow-sm">
+                                <i class="fas fa-file-excel mr-1"></i> Export Excel
+                            </button>
+                            <button onclick="resetDataPabrik()" class="text-xs bg-red-100 text-red-600 hover:bg-red-200 px-3 py-1.5 rounded flex items-center transition-colors shadow-sm">
+                                <i class="fas fa-exclamation-triangle mr-1"></i> Reset Data
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <button onclick="generateLaporan('induk')" class="flex flex-col items-center justify-center p-6 border-2 border-gray-100 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-xl transition-all group focus:outline-none">
+                            <i class="fas fa-address-book text-4xl text-blue-500 mb-3 group-hover:scale-110 transition-transform duration-300"></i>
+                            <span class="font-semibold text-gray-700">Laporan Buku Induk</span>
+                        </button>
+                        <button onclick="generateLaporan('nilai')" class="flex flex-col items-center justify-center p-6 border-2 border-gray-100 bg-white hover:border-green-400 hover:bg-green-50 rounded-xl transition-all group focus:outline-none">
+                            <i class="fas fa-chart-bar text-4xl text-green-500 mb-3 group-hover:scale-110 transition-transform duration-300"></i>
+                            <span class="font-semibold text-gray-700">Laporan Nilai Siswa</span>
+                        </button>
+                        <button onclick="generateLaporan('kelas')" class="flex flex-col items-center justify-center p-6 border-2 border-gray-100 bg-white hover:border-purple-400 hover:bg-purple-50 rounded-xl transition-all group focus:outline-none">
+                            <i class="fas fa-users text-4xl text-purple-500 mb-3 group-hover:scale-110 transition-transform duration-300"></i>
+                            <span class="font-semibold text-gray-700">Data Siswa per Kelas</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="print-area" class="bg-white rounded-lg shadow-sm border p-8 hidden w-full overflow-x-auto"></div>
+            `;
+        }
+
+        function generateLaporan(tipe) {
+            const printArea = document.getElementById('print-area');
+            printArea.classList.remove('hidden');
+            let content = '';
+            
+            const headerPrint = `
+                <div class="text-center mb-8 border-b-2 border-gray-800 pb-4 flex flex-col items-center">
+                    <img src="logo_sekolah.png" onerror="this.src='https://placehold.co/80x80/ffffff/000000?text=SMP'" alt="Logo" class="h-16 w-16 mb-2 object-contain">
+                    <h2 class="text-xl font-bold uppercase tracking-wider text-gray-900">SMP FRATER MAMASA</h2>
+                    <p class="text-sm text-gray-600 mt-1">Laporan Resmi Sistem Informasi Buku Induk Akademik Digital</p>
+                </div>
+            `;
+
+            if (tipe === 'induk') {
+                content = `
+                    ${headerPrint}
+                    <h3 class="text-lg font-bold text-center mb-6 text-gray-800">LAPORAN BUKU INDUK SISWA</h3>
+                    <table class="w-full text-left border-collapse border border-gray-300 text-sm">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-800">
+                                <th class="border border-gray-300 p-3 font-semibold">NIS</th>
+                                <th class="border border-gray-300 p-3 font-semibold">Nama Lengkap</th>
+                                <th class="border border-gray-300 p-3 font-semibold text-center">L/P</th>
+                                <th class="border border-gray-300 p-3 font-semibold">Tempat, Tgl Lahir</th>
+                                <th class="border border-gray-300 p-3 font-semibold text-center">Kelas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${state.siswa.map(s => `
+                                <tr class="text-gray-700">
+                                    <td class="border border-gray-300 p-2">${s.nis}</td>
+                                    <td class="border border-gray-300 p-2">${s.nama}</td>
+                                    <td class="border border-gray-300 p-2 text-center">${s.jk}</td>
+                                    <td class="border border-gray-300 p-2">${s.tempat}, ${s.tglLahir}</td>
+                                    <td class="border border-gray-300 p-2 text-center font-medium">${s.kelas}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } else if (tipe === 'nilai') {
+                content = `
+                    ${headerPrint}
+                    <h3 class="text-lg font-bold text-center mb-6 text-gray-800">REKAPITULASI NILAI SISWA</h3>
+                    <table class="w-full text-left border-collapse border border-gray-300 text-sm">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-800">
+                                <th class="border border-gray-300 p-3 font-semibold">Siswa</th>
+                                <th class="border border-gray-300 p-3 font-semibold">Mapel</th>
+                                <th class="border border-gray-300 p-3 font-semibold text-center">Tugas</th>
+                                <th class="border border-gray-300 p-3 font-semibold text-center">UTS</th>
+                                <th class="border border-gray-300 p-3 font-semibold text-center">UAS</th>
+                                <th class="border border-gray-300 p-3 font-semibold text-center text-blue-700">Nilai Akhir</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${state.nilai.map(n => {
+                                const s = state.siswa.find(x => x.id === n.idSiswa);
+                                return s ? `
+                                <tr class="text-gray-700">
+                                    <td class="border border-gray-300 p-2 font-medium">${s.nama} <span class="text-gray-400 font-normal">(${s.nis})</span></td>
+                                    <td class="border border-gray-300 p-2">${n.mapel}</td>
+                                    <td class="border border-gray-300 p-2 text-center">${n.tugas}</td>
+                                    <td class="border border-gray-300 p-2 text-center">${n.uts}</td>
+                                    <td class="border border-gray-300 p-2 text-center">${n.uas}</td>
+                                    <td class="border border-gray-300 p-2 text-center font-bold text-gray-900">${n.akhir.toFixed(2)}</td>
+                                </tr>
+                                ` : '';
+                            }).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } else if (tipe === 'kelas') {
+                let htmlKelas = '';
+                
+                const semuaKelas = [...new Set([...state.kelas, ...state.siswa.map(s => s.kelas)])].sort();
+
+                semuaKelas.forEach(k => {
+                    const siswaKelas = state.siswa.filter(s => s.kelas === k);
+                    
+                    htmlKelas += `
+                        <div class="mb-6 break-inside-avoid">
+                            <h4 class="font-bold text-lg mb-2 pb-1 border-b-2 border-gray-200 text-gray-800 bg-gray-50 px-3 py-1">Kelas: ${k}</h4>
+                    `;
+
+                    if (siswaKelas.length > 0) {
+                        htmlKelas += `
+                                <table class="w-full text-left border-collapse border border-gray-300 text-sm mt-2">
+                                    <thead>
+                                        <tr class="bg-gray-100">
+                                            <th class="border border-gray-300 p-2 w-16 text-center">No</th>
+                                            <th class="border border-gray-300 p-2 w-32">NIS</th>
+                                            <th class="border border-gray-300 p-2">Nama Siswa</th>
+                                            <th class="border border-gray-300 p-2 w-20 text-center">L/P</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${siswaKelas.map((s, idx) => `
+                                            <tr>
+                                                <td class="border border-gray-300 p-2 text-center">${idx + 1}</td>
+                                                <td class="border border-gray-300 p-2">${s.nis}</td>
+                                                <td class="border border-gray-300 p-2">${s.nama}</td>
+                                                <td class="border border-gray-300 p-2 text-center">${s.jk}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                    } else {
+                        htmlKelas += `
+                                <p class="text-sm text-gray-500 italic mt-2 px-2 pb-2">Belum ada siswa yang terdaftar di kelas ini.</p>
+                            </div>
+                        `;
+                    }
+                });
+                
+                content = `
+                    ${headerPrint}
+                    <h3 class="text-xl font-bold text-center mb-6 text-gray-800">DATA SISWA PER KELAS</h3>
+                    ${htmlKelas}
+                `;
+            }
+
+            printArea.innerHTML = `
+                ${content}
+                <div class="mt-8 pt-4 border-t border-gray-200 text-right print-hide">
+                    <button onclick="window.print()" class="bg-gray-800 hover:bg-black text-white px-6 py-2.5 rounded-lg font-medium shadow-md flex items-center inline-flex transition-colors">
+                        <i class="fas fa-print mr-2"></i> Cetak / Simpan PDF
+                    </button>
+                </div>
+            `;
+            
+            // Auto scroll to report
+            setTimeout(() => {
+                printArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
+
+        function resetDataPabrik() {
+            if(confirm('PERINGATAN: Anda yakin ingin menghapus SEMUA data dan kembali ke pengaturan awal? Tindakan ini tidak dapat dibatalkan!')) {
+                const resetData = JSON.parse(JSON.stringify(defaultState));
+                state.siswa = resetData.siswa;
+                state.nilai = resetData.nilai;
+                state.orangTua = resetData.orangTua;
+                state.mapel = resetData.mapel;
+                state.kelas = resetData.kelas;
+                
+                saveData(); // Timpa data di server Firebase dengan default
+                showNotification('Seluruh data telah di-reset ke pengaturan awal.', 'success');
+                renderViewContent();
+            }
+        }
+
+        function exportToExcel() {
+            try {
+                const wb = XLSX.utils.book_new();
+
+                // 1. Format Sheet Data Siswa
+                const dataSiswaExport = state.siswa.map((s, index) => ({
+                    'No': index + 1,
+                    'NIS': s.nis,
+                    'Nama Lengkap': s.nama,
+                    'Kelas': s.kelas,
+                    'Tempat Lahir': s.tempat,
+                    'Tanggal Lahir': s.tglLahir,
+                    'Jenis Kelamin': s.jk === 'L' ? 'Laki-laki' : 'Perempuan',
+                    'Alamat': s.alamat || '-'
+                }));
+                const wsSiswa = XLSX.utils.json_to_sheet(dataSiswaExport);
+                XLSX.utils.book_append_sheet(wb, wsSiswa, "Data Siswa");
+
+                // 2. Format Sheet Data Nilai
+                const dataNilaiExport = state.nilai.map((n, index) => {
+                    const siswa = state.siswa.find(s => s.id === n.idSiswa);
+                    return {
+                        'No': index + 1,
+                        'NIS': siswa ? siswa.nis : '-',
+                        'Nama Siswa': siswa ? siswa.nama : 'Siswa Terhapus',
+                        'Mata Pelajaran': n.mapel,
+                        'Nilai Tugas': n.tugas,
+                        'Nilai UTS': n.uts,
+                        'Nilai UAS': n.uas,
+                        'Nilai Akhir': parseFloat(n.akhir).toFixed(2)
+                    };
+                });
+                const wsNilai = XLSX.utils.json_to_sheet(dataNilaiExport);
+                XLSX.utils.book_append_sheet(wb, wsNilai, "Data Nilai");
+
+                // 3. Format Sheet Data Orang Tua
+                const dataOrtuExport = state.orangTua.map((o, index) => {
+                    const siswa = state.siswa.find(s => s.id === o.idSiswa);
+                    return {
+                        'No': index + 1,
+                        'Nama Siswa': siswa ? siswa.nama : 'Siswa Terhapus',
+                        'Nama Orang Tua': o.namaOrtu,
+                        'Pekerjaan': o.pekerjaan,
+                        'No HP / Kontak': o.kontak,
+                        'Alamat': o.alamat
+                    };
+                });
+                const wsOrtu = XLSX.utils.json_to_sheet(dataOrtuExport);
+                XLSX.utils.book_append_sheet(wb, wsOrtu, "Data Orang Tua");
+
+                // Proses Download File
+                XLSX.writeFile(wb, "Database_Buku_Induk_Sekolah.xlsx");
+                showNotification('Data berhasil diekspor ke Excel!', 'success');
+            } catch (error) {
+                console.error("Excel Export Error:", error);
+                showNotification('Gagal mengekspor data ke Excel.', 'error');
+            }
+        }
+
+        // Ekspos semua fungsi ke window agar HTML inline (seperti onclick) dapat membacanya
+        window.handleLogin = handleLogin;
+        window.handleLogout = handleLogout;
+        window.navigateTo = navigateTo;
+        window.openModalSiswa = openModalSiswa;
+        window.closeModal = closeModal;
+        window.saveSiswa = saveSiswa;
+        window.hapusSiswa = hapusSiswa;
+        window.simpanNilai = simpanNilai;
+        window.openModalOrtu = openModalOrtu;
+        window.saveOrtu = saveOrtu;
+        window.hapusOrtu = hapusOrtu;
+        window.tambahKelas = tambahKelas;
+        window.hapusKelas = hapusKelas;
+        window.tambahMapel = tambahMapel;
+        window.hapusMapel = hapusMapel;
+        window.generateLaporan = generateLaporan;
+        window.resetDataPabrik = resetDataPabrik;
+        window.exportToExcel = exportToExcel;
+
+        // Inisialisasi Autentikasi Firebase
+        const initAuth = async () => {
+            try {
+                // Gunakan Custom Token bawaan lingkungan pratinjau jika ada,
+                // tapi tangani jika terjadi error ketidakcocokan karena kustomisasi firebaseConfig
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    try {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } catch (tokenError) {
+                        console.warn("Ketidakcocokan custom token dengan konfigurasi Firebase kustom Anda, beralih ke Masuk Anonim...");
+                        await signInAnonymously(auth);
+                    }
+                } else {
+                    await signInAnonymously(auth); // Masuk anonim untuk mengamankan data
+                }
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+            }
+        };
+
+        // Initialize App
+        window.onload = () => {
+            renderApp();
+            initAuth();
+            
+            // Monitor koneksi Firebase
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    firebaseUser = user;
+                    loadData(); // Tarik data pertama kali saat koneksi database sukses
+                } else {
+                    firebaseUser = null;
+                }
+            });
+        };
+    </script>
+</body>
+</html>
