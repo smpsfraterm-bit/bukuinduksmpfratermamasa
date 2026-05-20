@@ -9,18 +9,20 @@
 </head>
 <body class="bg-slate-100 text-slate-800">
 
-    <div id="app">
-        <!-- Konten akan dirender di sini -->
-    </div>
+    <div id="app"></div>
 
     <script>
-        // Menggunakan link proxy agar gambar lebih mudah dimuat oleh browser
         const LOGO_URL = "https://lh3.googleusercontent.com/d/1cFZlURW-mPBPhb5qgQAMwxvI-PISCqkB";
         
+        // Data siswa tersimpan di memori browser
         let state = {
             isLoggedIn: false,
             role: null,
-            currentMenu: 'dashboard'
+            currentMenu: 'dashboard',
+            siswa: [
+                { id: 1, nama: "Budi Santoso", nis: "1001", kelas: "VII-A" },
+                { id: 2, nama: "Siti Aminah", nis: "1002", kelas: "VIII-B" }
+            ]
         };
 
         function renderApp() {
@@ -60,15 +62,28 @@
                                     <div class="flex flex-col items-center text-center">
                                         <img src="${LOGO_URL}" class="h-32 mb-6 object-contain">
                                         <h2 class="text-3xl font-bold text-slate-800">Selamat Datang</h2>
-                                        <p class="text-lg text-slate-600 mt-2 font-semibold">Sistem Buku Induk Digital</p>
                                         <div class="mt-6 p-4 bg-slate-50 border rounded-lg w-full max-w-lg">
-                                            <p class="text-slate-600"><b>Alamat Sekolah:</b></p>
-                                            <p class="font-bold text-blue-800">Randanan Desa Buntubuda, Kec. Mamasa, Kab. Mamasa, Prov. Sulbar</p>
+                                            <p class="font-bold text-blue-800">Randanan Desa Buntubuda, Kec. Mamasa, Kab. Mamasa</p>
                                         </div>
                                     </div>
                                 ` : `
-                                    <h2 class="text-2xl font-bold mb-4">Data Siswa</h2>
-                                    <p class="text-slate-600">Anda masuk sebagai: <b>${state.role === 'admin' ? 'Administrator' : 'Pengguna (Read-Only)'}</b></p>
+                                    <div class="flex justify-between items-center mb-6">
+                                        <h2 class="text-2xl font-bold">Data Siswa</h2>
+                                        ${state.role === 'admin' ? '<button onclick="tambahSiswa()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"><i class="fa-solid fa-plus mr-2"></i>Tambah Siswa</button>' : ''}
+                                    </div>
+                                    <table class="w-full text-left border-collapse">
+                                        <thead><tr class="border-b bg-slate-50"><th class="p-3">NIS</th><th class="p-3">Nama</th><th class="p-3">Kelas</th><th class="p-3">Aksi</th></tr></thead>
+                                        <tbody>
+                                            ${state.siswa.map(s => `
+                                                <tr class="border-b hover:bg-slate-50">
+                                                    <td class="p-3">${s.nis}</td>
+                                                    <td class="p-3">${s.nama}</td>
+                                                    <td class="p-3">${s.kelas}</td>
+                                                    <td class="p-3">${state.role === 'admin' ? '<button class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>' : '-'}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
                                 `}
                             </div>
                         </main>
@@ -76,6 +91,14 @@
                 `;
             }
         }
+
+        window.tambahSiswa = function() {
+            const nama = prompt("Nama Siswa:");
+            if (nama) {
+                state.siswa.push({ id: Date.now(), nama: nama, nis: "New", kelas: "VII" });
+                renderApp();
+            }
+        };
 
         window.handleLogin = function(e) {
             e.preventDefault();
@@ -93,16 +116,8 @@
             }
         };
 
-        window.handleLogout = function() {
-            state.isLoggedIn = false;
-            state.role = null;
-            renderApp();
-        };
-
-        window.navigateTo = function(menu) {
-            state.currentMenu = menu;
-            renderApp();
-        };
+        window.handleLogout = () => { state.isLoggedIn = false; renderApp(); };
+        window.navigateTo = (m) => { state.currentMenu = m; renderApp(); };
 
         renderApp();
     </script>
